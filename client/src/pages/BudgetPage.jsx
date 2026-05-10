@@ -22,10 +22,11 @@ const BudgetPage = () => {
     try {
       setLoading(true);
       const tripRes = await getTripById(id);
-      setTrip(tripRes.data?.trip || tripRes.data || tripRes.trip);
+      const tripData = tripRes.data?.data || tripRes.data?.trip || tripRes.data || tripRes.trip;
+      setTrip(tripData);
 
       const expRes = await getExpenses(id);
-      setExpenses(expRes.data?.expenses || expRes.data || expRes.expenses || []);
+      setExpenses(Array.isArray(expRes.data) ? expRes.data : (Array.isArray(expRes.data?.data) ? expRes.data.data : []));
     } catch (err) {
       setError('Failed to load budget data.');
     } finally {

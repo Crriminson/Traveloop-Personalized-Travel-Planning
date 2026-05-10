@@ -114,7 +114,8 @@ const DiscoverPage = () => {
           selectedStop.city.id,
           activeCategory === 'ALL' ? undefined : activeCategory
         );
-        setActivities(res.data?.activities || []);
+        const acts = res.data?.data || res.data;
+        setActivities(Array.isArray(acts) ? acts : []);
       } catch { setActivities([]); }
       finally { setActivitiesLoading(false); }
     };

@@ -1,10 +1,14 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useOutletContext, useParams } from 'react-router-dom';
 import {
   DndContext, closestCorners, PointerSensor, useSensor, useSensors, DragOverlay,
+  useDroppable,
 } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import {
   CalendarDays, GripVertical, Clock, IndianRupee, Trash2, Edit3,
   Loader2, Plus, X, MapPin, Save, Search
@@ -12,6 +16,31 @@ import {
 import { getStops, createStop } from '../api/stops.api';
 import axiosInstance from '../api/axiosInstance';
 import { searchEntities } from '../api/search.api';
+
+// Fix leaflet icons
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+});
+
+// Click-to-place pin helper
+const MapPinPlacer = ({ onPin }) => {
+  useMapEvents({ click(e) { onPin(e.latlng.lat, e.latlng.lng); } });
+  return null;
+};
+
+// Droppable day column wrapper
+const DroppableDay = ({ id, children }) => {
+  const { setNodeRef, isOver } = useDroppable({ id });
+  return (
+    <div ref={setNodeRef}
+      className={`flex-1 flex flex-col gap-2 min-h-[80px] rounded-lg transition-colors ${isOver ? 'bg-amber-50 ring-2 ring-amber-300' : ''}`}>
+      {children}
+    </div>
+  );
+};
 
 /* ─── Helpers ──────────────────────────────────────────────────────────────── */
 
@@ -127,20 +156,41 @@ const EditPanel = ({ activity, onSave, onClose, dayIndex, stopId }) => {
   const [startTime, setStartTime] = useState(activity?.startTime || '');
   const [endTime, setEndTime] = useState(activity?.endTime || '');
   const [cost, setCost] = useState(activity?.cost || 0);
+  const [location, setLocation] = useState(activity?.location || '');
   const [notes, setNotes] = useState(activity?.notes || '');
   const [saving, setSaving] = useState(false);
+  const [showMap, setShowMap] = useState(false);
+
+  // Parse existing pin if present
+  const existingPin = useMemo(() => {
+    if (!location) return null;
+    const p = location.split(',');
+    if (p.length !== 2) return null;
+    const lat = parseFloat(p[0]), lng = parseFloat(p[1]);
+    return isNaN(lat) || isNaN(lng) ? null : [lat, lng];
+  }, [location]);
+
+  const handlePin = (lat, lng) => {
+    setLocation(`${lat.toFixed(6)},${lng.toFixed(6)}`);
+  };
 
   const handleSave = async () => {
     if (!customName.trim()) return alert("Name is required");
     setSaving(true);
-    await onSave({ ...activity, customName, startTime, endTime, cost: Number(cost), notes, dayOffset: dayIndex, stopId });
+    await onSave({ ...activity, customName, startTime, endTime, cost: Number(cost), location, notes, dayOffset: dayIndex, stopId });
     setSaving(false);
   };
+
+  const pinIcon = L.divIcon({
+    className: '',
+    html: `<div style="background:#F5C142;border:2px solid #1A1A1A;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;">📍</div>`,
+    iconSize: [20, 20], iconAnchor: [10, 10],
+  });
 
   return (
     <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={onClose}>
       <div
-        className="bg-white rounded-3xl border-2 border-[#1A1A1A] p-6 w-[400px] max-w-[90vw] space-y-4"
+        className="bg-white rounded-3xl border-2 border-[#1A1A1A] p-6 w-[440px] max-w-[95vw] space-y-4 max-h-[90vh] overflow-y-auto"
         style={{ boxShadow: '6px 6px 0px #1A1A1A' }}
         onClick={e => e.stopPropagation()}
       >
@@ -171,6 +221,41 @@ const EditPanel = ({ activity, onSave, onClose, dayIndex, stopId }) => {
             <input type="number" value={cost} onChange={e => setCost(e.target.value)}
               className="w-full border-2 border-[#E5E7EB] rounded-xl px-3 py-2 text-sm focus:border-[#1A1A1A] focus:outline-none" />
           </div>
+
+          {/* Location / Map Pin */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-[10px] font-bold text-[#1A1A1A] uppercase tracking-widest">Pin Location</label>
+              <button
+                type="button"
+                onClick={() => setShowMap(v => !v)}
+                className="text-[10px] font-bold text-[#F5C142] border border-[#F5C142] rounded-lg px-2 py-0.5 hover:bg-[#FEF3C7] transition-colors"
+              >
+                {showMap ? 'Hide Map' : (existingPin ? '📍 Repin' : '📍 Pin on Map')}
+              </button>
+            </div>
+            {location && (
+              <p className="text-[10px] text-[#6B7280] mb-1">📍 {location}</p>
+            )}
+            {showMap && (
+              <div className="rounded-xl overflow-hidden border-2 border-[#1A1A1A]" style={{ height: 200 }}>
+                <MapContainer
+                  center={existingPin || [20.5937, 78.9629]}
+                  zoom={existingPin ? 13 : 4}
+                  style={{ height: '100%', width: '100%' }}
+                  className="z-0"
+                >
+                  <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                  <MapPinPlacer onPin={handlePin} />
+                  {existingPin && <Marker position={existingPin} icon={pinIcon} />}
+                </MapContainer>
+              </div>
+            )}
+            {showMap && (
+              <p className="text-[10px] text-[#9CA3AF] mt-1">Click anywhere on the map to drop a pin</p>
+            )}
+          </div>
+
           <div>
             <label className="text-[10px] font-bold text-[#1A1A1A] uppercase tracking-widest">Notes</label>
             <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
@@ -248,6 +333,8 @@ const PlanPage = () => {
   const [addingActivityDay, setAddingActivityDay] = useState(null);
   const [activeId, setActiveId] = useState(null);
   const [showAddStop, setShowAddStop] = useState(false);
+  // Track the original day when a drag starts so handleDragEnd always knows where it came from
+  const dragOriginDay = React.useRef(null);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
@@ -258,7 +345,7 @@ const PlanPage = () => {
     setLoading(true);
     try {
       const res = await getStops(id);
-      const s = Array.isArray(res.data) ? res.data : (res.data?.stops || []);
+      const s = Array.isArray(res.data) ? res.data : (Array.isArray(res.data?.data) ? res.data.data : []);
       setStops(s);
 
       // Fetch activities for each stop
@@ -267,7 +354,7 @@ const PlanPage = () => {
         try {
           const actRes = await axiosInstance.get(`/trips/${id}/stops/${stop.id}/activities`);
           const acts = actRes.data?.data || [];
-          map[stop.id] = Array.isArray(acts) ? acts : [];
+          map[stop.id] = Array.isArray(acts) ? acts.map(a => ({ ...a, stopId: stop.id })) : [];
         } catch { map[stop.id] = []; }
       }
       setActivitiesByStop(map);
@@ -300,49 +387,116 @@ const PlanPage = () => {
     return map;
   }, [allActivities, days]);
 
-  const handleDragStart = (event) => { setActiveId(event.active.id); };
+  const handleDragStart = (event) => {
+    const actId = event.active.id;
+    setActiveId(actId);
+    // Record original day BEFORE any optimistic moves happen
+    dragOriginDay.current = getActDay(actId);
+  };
+
+  // Helper: which day does an activity belong to?
+  const getActDay = useCallback((actId) => {
+    const key = Object.keys(activitiesByDay).find(k =>
+      activitiesByDay[k].some(a => a.id === actId)
+    );
+    return key !== undefined ? parseInt(key) : null;
+  }, [activitiesByDay]);
+
+  // Called while dragging — move card to new column optimistically
+  const handleDragOver = (event) => {
+    const { active, over } = event;
+    if (!over) return;
+    const activeActId = active.id;
+    const overId = String(over.id);
+
+    const srcDay = getActDay(activeActId);
+    let destDay;
+    if (overId.startsWith('day-col-')) {
+      destDay = parseInt(overId.replace('day-col-', ''));
+    } else {
+      destDay = getActDay(overId);
+    }
+    if (srcDay === null || destDay === null || srcDay === destDay) return;
+
+    const activity = allActivities.find(a => a.id === activeActId);
+    if (!activity) return;
+
+    // Optimistic cross-column move
+    setActivitiesByStop(prev => {
+      const next = { ...prev };
+      if (next[activity.stopId]) {
+        next[activity.stopId] = next[activity.stopId].map(a =>
+          a.id === activeActId ? { ...a, dayOffset: destDay } : a
+        );
+      }
+      return next;
+    });
+  };
 
   const handleDragEnd = async (event) => {
     setActiveId(null);
     const { active, over } = event;
-    if (!over || active.id === over.id) return;
+    const originDay = dragOriginDay.current;
+    dragOriginDay.current = null;
 
-    const dayKey = Object.keys(activitiesByDay).find(k =>
-      activitiesByDay[k].some(a => a.id === active.id)
-    );
-    if (!dayKey) return;
+    if (!over) return;
 
-    const items = [...activitiesByDay[dayKey]];
-    const oldIdx = items.findIndex(a => a.id === active.id);
-    const newIdx = items.findIndex(a => a.id === over.id);
+    const activeActId = active.id;
+    const overId = String(over.id);
+    const activity = allActivities.find(a => a.id === activeActId);
+    if (!activity) return;
+
+    // Resolve destination day from the over target
+    let destDay;
+    if (overId.startsWith('day-col-')) {
+      destDay = parseInt(overId.replace('day-col-', ''));
+    } else {
+      destDay = getActDay(overId);
+    }
+    if (destDay === null) return;
+
+    // Cross-column drop — use originDay to detect actual move
+    if (originDay !== null && destDay !== originDay) {
+      // Optimistic state is already applied by handleDragOver; just persist
+      try {
+        await axiosInstance.put(
+          `/trips/${id}/stops/${activity.stopId}/activities/${activeActId}`,
+          { customName: activity.customName, cost: activity.cost, dayOffset: destDay,
+            notes: activity.notes || null, startTime: activity.startTime || null,
+            endTime: activity.endTime || null, location: activity.location || null }
+        );
+      } catch {
+        // Rollback: reload from server
+        loadData();
+      }
+      return;
+    }
+
+    // Same-column reorder
+    const dayKey = String(originDay ?? destDay);
+    if (activeActId === overId) return;
+    const items = [...(activitiesByDay[dayKey] || [])];
+    const oldIdx = items.findIndex(a => a.id === activeActId);
+    const newIdx = items.findIndex(a => a.id === overId);
     if (oldIdx === -1 || newIdx === -1) return;
-
     const reordered = arrayMove(items, oldIdx, newIdx);
 
-    // Optimistic update
     setActivitiesByStop(prev => {
       const next = { ...prev };
-      for (const stopId of Object.keys(next)) {
-        const hasItem = next[stopId].some(a => a.id === active.id);
-        if (hasItem) {
-          next[stopId] = next[stopId].map(a => {
-            const idx = reordered.findIndex(r => r.id === a.id);
-            return idx >= 0 ? { ...a, orderIndex: idx } : a;
-          });
-        }
+      if (next[activity.stopId]) {
+        next[activity.stopId] = next[activity.stopId].map(a => {
+          const idx = reordered.findIndex(r => r.id === a.id);
+          return idx >= 0 ? { ...a, orderIndex: idx } : a;
+        });
       }
       return next;
     });
 
-    // Persist reorder on server
     try {
-      const stopId = allActivities.find(a => a.id === active.id)?.stopId;
-      if (stopId) {
-        await axiosInstance.patch(`/trips/${id}/stops/${stopId}/activities/reorder`, {
-          items: reordered.map((a, i) => ({ id: a.id, orderIndex: i })),
-        });
-      }
-    } catch { /* revert if needed */ }
+      await axiosInstance.patch(`/trips/${id}/stops/${activity.stopId}/activities/reorder`, {
+        items: reordered.map((a, i) => ({ id: a.id, orderIndex: i })),
+      });
+    } catch { /* ignore */ }
   };
 
   const handleDelete = async (activity) => {
@@ -397,7 +551,8 @@ const PlanPage = () => {
           dayOffset: newActivity.dayOffset
         }
       );
-      const addedAct = res.data.data;
+      // Stamp stopId so DnD & map can identify it
+      const addedAct = { ...(res.data.data || {}), stopId: newActivity.stopId };
       setActivitiesByStop(prev => {
         const next = { ...prev };
         if (!next[newActivity.stopId]) next[newActivity.stopId] = [];
@@ -480,7 +635,7 @@ const PlanPage = () => {
       ) : (
         /* Day columns — horizontal scroll */
         <DndContext sensors={sensors} collisionDetection={closestCorners}
-          onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+          onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
           <div className="flex-1 overflow-x-auto">
             <div className="flex gap-4 pb-4 min-h-[400px]" style={{ minWidth: `${days.length * 280}px` }}>
               {days.map((day, dayIdx) => {
@@ -512,24 +667,26 @@ const PlanPage = () => {
                       </div>
                     </div>
 
-                    {/* Activities column */}
+                    {/* Activities column — wrapped in DroppableDay for cross-column drops */}
                     <div className="bg-white/60 border-2 border-t-0 border-[#1A1A1A] rounded-b-2xl px-2 py-2 flex-1 flex flex-col gap-2">
-                      <SortableContext items={dayActs.map(a => a.id)} strategy={verticalListSortingStrategy}>
-                        {dayActs.map(act => (
-                          <SortableActivity
-                            key={act.id}
-                            activity={act}
-                            onEdit={setEditingActivity}
-                            onDelete={handleDelete}
-                          />
-                        ))}
-                      </SortableContext>
+                      <DroppableDay id={`day-col-${dayIdx}`}>
+                        <SortableContext items={dayActs.map(a => a.id)} strategy={verticalListSortingStrategy}>
+                          {dayActs.map(act => (
+                            <SortableActivity
+                              key={act.id}
+                              activity={act}
+                              onEdit={setEditingActivity}
+                              onDelete={handleDelete}
+                            />
+                          ))}
+                        </SortableContext>
 
-                      {dayActs.length === 0 && (
-                        <div className="flex items-center justify-center h-[80px] border-2 border-dashed border-[#D1D5DB] rounded-xl text-xs text-[#9CA3AF] font-bold">
-                          Drop activities here
-                        </div>
-                      )}
+                        {dayActs.length === 0 && (
+                          <div className="flex items-center justify-center h-[80px] border-2 border-dashed border-[#D1D5DB] rounded-xl text-xs text-[#9CA3AF] font-bold">
+                            Drop activities here
+                          </div>
+                        )}
+                      </DroppableDay>
 
                       <button
                         onClick={() => setAddingActivityDay({ dayIndex: dayIdx, stopId: dayStop.id })}
