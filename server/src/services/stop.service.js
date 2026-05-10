@@ -19,6 +19,8 @@ const STOP_SELECT = {
       imageUrl: true,
       costIndex: true,
       timezone: true,
+      latitude: true,
+      longitude: true,
     },
   },
   _count: { select: { activities: true } },
