@@ -30,13 +30,13 @@ const createNumberedIcon = (num, color = '#F5C142') => {
   });
 };
 
-/* Auto-fit map to markers */
+/* Auto-fit map to markers — includes both stop positions and activity pins */
 const FitBounds = ({ positions }) => {
   const map = useMap();
   useEffect(() => {
     if (positions.length > 0) {
       const bounds = L.latLngBounds(positions);
-      map.fitBounds(bounds, { padding: [50, 50] });
+      map.fitBounds(bounds, { padding: [60, 60] });
     }
   }, [positions, map]);
   return null;
@@ -51,13 +51,23 @@ const TripMapPage = () => {
   const [loading, setLoading] = useState(true);
   const [selectedStop, setSelectedStop] = useState(null);
   const [activities, setActivities] = useState([]);
+  const [allActivities, setAllActivities] = useState({});
 
   useEffect(() => {
     const load = async () => {
       try {
         const res = await getStops(id);
-        const s = Array.isArray(res.data) ? res.data : (res.data?.stops || []);
+        const s = Array.isArray(res.data) ? res.data : (Array.isArray(res.data?.data) ? res.data.data : []);
         setStops(s);
+        // Pre-load all activities for all stops so we can show pins
+        const allActs = {};
+        for (const stop of s) {
+          try {
+            const ar = await axiosInstance.get(`/trips/${id}/stops/${stop.id}/activities`);
+            allActs[stop.id] = ar.data?.data || [];
+          } catch { allActs[stop.id] = []; }
+        }
+        setAllActivities(allActs);
       } catch { /* ignore */ }
       finally { setLoading(false); }
     };
@@ -82,6 +92,26 @@ const TripMapPage = () => {
       .map(s => [s.city.latitude, s.city.longitude]),
     [stops]
   );
+
+  // All activity pins for map bounds + sidebar
+  const pinnedActivities = useMemo(() => {
+    return Object.values(allActivities).flat().filter(act => {
+      if (!act.location) return false;
+      const parts = act.location.split(',');
+      if (parts.length !== 2) return false;
+      const lat = parseFloat(parts[0]), lng = parseFloat(parts[1]);
+      return !isNaN(lat) && !isNaN(lng);
+    });
+  }, [allActivities]);
+
+  // Combined positions for FitBounds — prefer activity pins when they exist
+  const allMapPositions = useMemo(() => {
+    const actPositions = pinnedActivities.map(act => {
+      const [lat, lng] = act.location.split(',').map(parseFloat);
+      return [lat, lng];
+    });
+    return actPositions.length > 0 ? [...positions, ...actPositions] : positions;
+  }, [positions, pinnedActivities]);
 
   const defaultCenter = positions.length > 0 ? positions[0] : [20.5937, 78.9629]; // India center
 
@@ -122,10 +152,15 @@ const TripMapPage = () => {
           <p className="text-[10px] text-[#6B7280] uppercase tracking-widest font-bold">
             {trip?.name} — Route Visualisation
           </p>
-          <div className="mt-2 flex items-center gap-1.5">
+          <div className="mt-2 flex items-center gap-1.5 flex-wrap">
             <span className="bg-[#F5F0E8] text-[10px] font-bold px-2.5 py-1 rounded-full border border-[#E5E7EB]">
               📍 {stops.length} stops
             </span>
+            {pinnedActivities.length > 0 && (
+              <span className="bg-orange-50 text-[10px] font-bold px-2.5 py-1 rounded-full border border-orange-200 text-orange-700">
+                🎯 {pinnedActivities.length} activity pins
+              </span>
+            )}
           </div>
         </div>
 
@@ -142,8 +177,8 @@ const TripMapPage = () => {
                          }`}
             >
               <div className="flex items-center gap-2 mb-1">
-                <span className="bg-[#F5C142] text-[10px] font-black px-2 py-0.5 rounded-md border border-[#1A1A1A] text-[#1A1A1A]">
-                  {idx + 1}
+                <span className="bg-[#1A1A1A] text-[10px] font-black px-2 py-0.5 rounded-md text-[#F5C142]">
+                  ★
                 </span>
                 <span className="text-sm font-black text-[#1A1A1A]">{stop.city?.name}</span>
               </div>
@@ -175,6 +210,54 @@ const TripMapPage = () => {
             </div>
           </div>
         )}
+        {/* Pinned activities list */}
+        {pinnedActivities.length > 0 && (
+          <div className="px-3 pb-3 border-t border-[#E5E7EB]">
+            <p className="text-[10px] font-bold text-[#1A1A1A] uppercase tracking-widest px-1 py-2">🎯 Activity Pins</p>
+            <div className="space-y-1.5">
+              {pinnedActivities.map((act, idx) => {
+                let dateLabel = '';
+                if (trip?.startDate && act.dayOffset !== undefined) {
+                  const d = new Date(trip.startDate);
+                  d.setDate(d.getDate() + act.dayOffset);
+                  dateLabel = d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+                }
+                return (
+                  <div key={act.id}
+                    className="bg-orange-50 border border-orange-200 rounded-xl px-3 py-2 flex items-start gap-3"
+                  >
+                    <span className="mt-0.5 bg-[#FB923C] text-[10px] font-black px-2 py-0.5 rounded-md border border-[#1A1A1A] text-[#1A1A1A] flex-shrink-0">
+                      {idx + 1}
+                    </span>
+                    <div>
+                      <p className="text-xs font-bold text-[#1A1A1A]">
+                        {act.customName || act.activity?.name || 'Activity'}
+                      </p>
+                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                      {dateLabel && <span className="text-[10px] text-orange-700">📅 {dateLabel}</span>}
+                      {act.startTime && <span className="text-[10px] text-[#6B7280]">🕐 {act.startTime}</span>}
+                      {act.cost > 0 && <span className="text-[10px] text-[#6B7280]">💰 ₹{act.cost}</span>}
+                    </div>
+                    {act.notes && (
+                      <p className="text-[10px] text-[#9CA3AF] mt-1 italic line-clamp-2">{act.notes}</p>
+                    )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {pinnedActivities.length === 0 && (
+          <div className="px-4 py-4 border-t border-[#E5E7EB]">
+            <div className="bg-[#F5F0E8] rounded-xl p-3 text-center">
+              <p className="text-[11px] font-bold text-[#6B7280]">🗺️ No activity pins yet</p>
+              <p className="text-[10px] text-[#9CA3AF] mt-1">Add activities in the Plan tab and pin their locations to see them here.</p>
+            </div>
+          </div>
+        )}
+
       </div>
 
       {/* Map area */}
@@ -189,7 +272,7 @@ const TripMapPage = () => {
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
-          <FitBounds positions={positions} />
+          <FitBounds positions={allMapPositions} />
 
           {/* Route line */}
           {positions.length > 1 && (
@@ -206,13 +289,77 @@ const TripMapPage = () => {
               <Marker
                 key={stop.id}
                 position={[stop.city.latitude, stop.city.longitude]}
-                icon={createNumberedIcon(idx + 1, selectedStop?.id === stop.id ? '#F5C142' : '#FFFFFF')}
+                icon={L.divIcon({
+                  className: '',
+                  html: `<div style="
+                    background:${selectedStop?.id === stop.id ? '#1A1A1A' : '#FFFFFF'};
+                    border:2px solid #1A1A1A; border-radius:50%; width:20px; height:20px;
+                    display:flex; align-items:center; justify-content:center;
+                    font-size:10px; color:${selectedStop?.id === stop.id ? '#F5C142' : '#1A1A1A'};
+                    box-shadow:2px 2px 0px #1A1A1A;
+                  ">★</div>`,
+                  iconSize: [20, 20], iconAnchor: [10, 10],
+                })}
                 eventHandlers={{ click: () => setSelectedStop(stop) }}
               >
                 <Popup>
                   <div className="text-center">
                     <p className="font-bold text-sm">{stop.city.name}</p>
                     <p className="text-xs text-gray-500">{stop.city.country}</p>
+                  </div>
+                </Popup>
+              </Marker>
+            );
+          })}
+
+          {/* Activity location pins */}
+          {Object.values(allActivities).flat().filter(act => act.location && act.location.split(',').length === 2 && !isNaN(parseFloat(act.location.split(',')[0]))).map((act, idx) => {
+            const parts = act.location.split(',');
+            if (parts.length !== 2) return null;
+            const lat = parseFloat(parts[0]);
+            const lng = parseFloat(parts[1]);
+            if (isNaN(lat) || isNaN(lng)) return null;
+
+            // Calculate actual date from dayOffset + trip start
+            let dateLabel = '';
+            if (trip?.startDate && act.dayOffset !== undefined && act.dayOffset !== null) {
+              const d = new Date(trip.startDate);
+              d.setDate(d.getDate() + act.dayOffset);
+              dateLabel = d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+            }
+
+            const actIcon = createNumberedIcon(idx + 1, '#FB923C');
+
+            return (
+              <Marker key={act.id} position={[lat, lng]} icon={actIcon}>
+                <Popup maxWidth={220}>
+                  <div style={{ minWidth: 160 }}>
+                    <p style={{ fontWeight: 900, fontSize: 13, marginBottom: 4, color: '#1A1A1A' }}>
+                      {act.customName || act.activity?.name || 'Activity'}
+                    </p>
+                    {dateLabel && (
+                      <p style={{ fontSize: 11, color: '#6B7280', marginBottom: 2 }}>
+                        📅 {dateLabel}
+                        {act.dayOffset !== undefined ? ` · Day ${act.dayOffset + 1}` : ''}
+                      </p>
+                    )}
+                    {(act.startTime || act.endTime) && (
+                      <p style={{ fontSize: 11, color: '#6B7280', marginBottom: 2 }}>
+                        🕐 {act.startTime || ''}
+                        {act.startTime && act.endTime ? ' – ' : ''}
+                        {act.endTime || ''}
+                      </p>
+                    )}
+                    {act.cost > 0 && (
+                      <p style={{ fontSize: 11, color: '#6B7280', marginBottom: 2 }}>
+                        💰 ₹{act.cost.toLocaleString('en-IN')}
+                      </p>
+                    )}
+                    {act.notes && (
+                      <p style={{ fontSize: 11, color: '#9CA3AF', marginTop: 4, fontStyle: 'italic', borderTop: '1px solid #E5E7EB', paddingTop: 4 }}>
+                        {act.notes}
+                      </p>
+                    )}
                   </div>
                 </Popup>
               </Marker>

@@ -27,7 +27,7 @@ const NotesPage = () => {
       setTrip(tripRes.data?.trip || tripRes.data || tripRes.trip);
 
       const notesRes = await getNotes(id);
-      setNotes(notesRes.data?.notes || notesRes.data || notesRes.notes || []);
+      setNotes(Array.isArray(notesRes.data) ? notesRes.data : (Array.isArray(notesRes.data?.data) ? notesRes.data.data : []));
     } catch (err) {
       setError('Failed to load notes data.');
     } finally {

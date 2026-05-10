@@ -18,9 +18,9 @@ const createStopActivitySchema = z
       .min(1, { message: 'customName cannot be empty' })
       .optional(),
 
-    startTime: timeField.optional(),
+    startTime: timeField.nullable().optional(),
 
-    endTime: timeField.optional(),
+    endTime: timeField.nullable().optional(),
 
     cost: z
       .number({ invalid_type_error: 'cost must be a number' })
@@ -30,6 +30,13 @@ const createStopActivitySchema = z
     notes: z
       .string()
       .max(500, { message: 'Notes must be at most 500 characters' })
+      .nullable()
+      .optional(),
+
+    location: z
+      .string()
+      .max(255, { message: 'Location must be at most 255 characters' })
+      .nullable()
       .optional(),
 
     orderIndex: z
@@ -71,9 +78,9 @@ const updateStopActivitySchema = z
       .min(1, { message: 'customName cannot be empty' })
       .optional(),
 
-    startTime: timeField.optional(),
+    startTime: timeField.nullable().optional(),
 
-    endTime: timeField.optional(),
+    endTime: timeField.nullable().optional(),
 
     cost: z
       .number({ invalid_type_error: 'cost must be a number' })
@@ -83,6 +90,13 @@ const updateStopActivitySchema = z
     notes: z
       .string()
       .max(500, { message: 'Notes must be at most 500 characters' })
+      .nullable()
+      .optional(),
+
+    location: z
+      .string()
+      .max(255, { message: 'Location must be at most 255 characters' })
+      .nullable()
       .optional(),
 
     orderIndex: z

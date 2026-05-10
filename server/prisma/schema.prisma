@@ -211,6 +211,7 @@ model StopActivity {
 
   stop        TripStop  @relation(fields: [stopId], references: [id], onDelete: Cascade)
   activity    Activity? @relation(fields: [activityId], references: [id])
+  location    String?
 
   @@index([stopId])
   @@map("stop_activities")

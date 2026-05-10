@@ -8,8 +8,23 @@ const apiResponse = require('../utils/apiResponse');
  * JSON response with correct status codes.
  */
 const errorHandler = (err, req, res, next) => {
-  const statusCode = err.statusCode || 500;
-  const message = err.message || 'Internal Server Error';
+  let statusCode = err.statusCode || 500;
+  let message = err.message || 'Internal Server Error';
+
+  // Sanitize Prisma database errors
+  if (err.name === 'PrismaClientKnownRequestError') {
+    statusCode = 400;
+    if (err.code === 'P2003') {
+      message = 'Invalid reference: The associated record (e.g. user or resource) does not exist.';
+    } else if (err.code === 'P2002') {
+      message = 'Duplicate entry: A record with this unique value already exists.';
+    } else {
+      message = 'A database request error occurred.';
+    }
+  } else if (err.name === 'PrismaClientValidationError') {
+    statusCode = 400;
+    message = 'Invalid data format submitted to the database.';
+  }
 
   // Log error for developers
   if (env.NODE_ENV === 'development') {

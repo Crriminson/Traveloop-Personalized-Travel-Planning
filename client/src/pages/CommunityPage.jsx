@@ -81,6 +81,10 @@ const CommunityPage = () => {
     return new Date(b.createdAt) - new Date(a.createdAt);
   });
 
+  // All unique categories present in the data
+  const allCategories = ['ALL', ...Array.from(new Set(posts.map(p => p.category).filter(Boolean)))];
+  const groupCategories = Array.from(new Set(filteredPosts.map(p => p.category).filter(Boolean)));
+
   const renderPost = (post) => (
     <div key={post.id} className="flex gap-6 items-start w-full group">
       
@@ -169,9 +173,8 @@ const CommunityPage = () => {
           </button>
           <button 
             onClick={() => {
-              const categories = ['ALL', 'TIPS', 'ITINERARY REVIEW', 'GEAR'];
-              const nextIndex = (categories.indexOf(filterCategory) + 1) % categories.length;
-              setFilterCategory(categories[nextIndex]);
+              const nextIndex = (allCategories.indexOf(filterCategory) + 1) % allCategories.length;
+              setFilterCategory(allCategories[nextIndex]);
             }}
             className={`flex items-center gap-2 border-2 border-[#1A1A1A] rounded-full px-6 py-3.5 text-sm font-bold transition-colors whitespace-nowrap ${filterCategory !== 'ALL' ? 'bg-[#F5C142] text-[#1A1A1A]' : 'bg-white text-[#1A1A1A] hover:bg-[#F5F0E8]'}`} 
             style={{ boxShadow: '4px 4px 0px #1A1A1A' }}
@@ -251,7 +254,7 @@ const CommunityPage = () => {
               filteredPosts.map(post => renderPost(post))
             ) : (
               <div className="space-y-12">
-                {['TIPS', 'ITINERARY REVIEW', 'GEAR'].map(cat => {
+                {groupCategories.map(cat => {
                   const items = filteredPosts.filter(i => i.category === cat);
                   if (items.length === 0) return null;
                   return (

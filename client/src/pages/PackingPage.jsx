@@ -30,7 +30,7 @@ const PackingPage = () => {
       setTrip(tripRes.data?.trip || tripRes.data || tripRes.trip);
 
       const itemsRes = await getPackingItems(id);
-      setItems(itemsRes.data?.items || itemsRes.data || itemsRes.items || []);
+      setItems(Array.isArray(itemsRes.data) ? itemsRes.data : (Array.isArray(itemsRes.data?.data) ? itemsRes.data.data : []));
     } catch (err) {
       setError('Failed to load packing items.');
     } finally {

@@ -8,6 +8,7 @@ import {
   LogOut,
   ChevronDown,
   Users,
+  Shield,
 } from 'lucide-react';
 
 /**
@@ -46,6 +47,7 @@ const AppLayout = () => {
             { name: 'My Trips',  path: '/trips',   icon: Briefcase },
             { name: 'Community', path: '/community', icon: Users },
             { name: 'Profile',   path: '/profile', icon: User },
+            ...(user?.role === 'ADMIN' ? [{ name: 'Admin', path: '/admin', icon: Shield }] : []),
           ].map(({ name, path, icon: Icon }) => (
             <NavLink
               key={path}
@@ -54,8 +56,8 @@ const AppLayout = () => {
               className={({ isActive }) =>
                 `flex items-center gap-2 px-5 py-2 rounded-full text-sm font-bold transition-colors duration-150
                  ${isActive
-                   ? 'bg-[#F5C142] text-[#1A1A1A] border-2 border-[#1A1A1A]'
-                   : 'text-[#6B7280] hover:text-[#1A1A1A] hover:bg-[#F5F0E8] border-2 border-transparent'
+                   ? (name === 'Admin' ? 'bg-red-500 text-white border-2 border-red-700' : 'bg-[#F5C142] text-[#1A1A1A] border-2 border-[#1A1A1A]')
+                   : (name === 'Admin' ? 'text-red-600 hover:bg-red-50 border-2 border-transparent' : 'text-[#6B7280] hover:text-[#1A1A1A] hover:bg-[#F5F0E8] border-2 border-transparent')
                  }`
               }
             >

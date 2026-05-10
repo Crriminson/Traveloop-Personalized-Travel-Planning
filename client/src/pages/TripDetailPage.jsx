@@ -36,7 +36,7 @@ const TripDetailPage = () => {
     const load = async () => {
       try {
         const res = await getStops(id);
-        setStops(Array.isArray(res.data) ? res.data : (res.data?.stops || []));
+        setStops(Array.isArray(res.data) ? res.data : (Array.isArray(res.data?.data) ? res.data.data : []));
       } catch { /* ignore */ }
     };
     if (id) load();
