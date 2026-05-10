@@ -4,7 +4,7 @@ import {
   Compass, Star, MapPin, Clock, IndianRupee, Loader2,
   Heart, Bookmark, X, Plus, Filter,
 } from 'lucide-react';
-import { getStops } from '../api/stops.api';
+import { getStops, createStop } from '../api/stops.api';
 import { getCityActivities } from '../api/search.api';
 import axiosInstance from '../api/axiosInstance';
 
@@ -29,6 +29,53 @@ const CAT_EMOJI = {
   RELAXATION: '🧘', SHOPPING: '🛍️', TRANSPORT: '🚌', ACCOMMODATION: '🏨', OTHER: '📌',
 };
 
+/* ─── Add Stop Panel ──────────────────────────────────────────────────────── */
+const AddStopPanel = ({ tripId, onAdded, onClose }) => {
+  const [cityName, setCityName] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const handleAdd = async () => {
+    if (!cityName.trim()) return alert('City name is required');
+    setSaving(true);
+    try {
+      await createStop(tripId, { cityName });
+      onAdded();
+    } catch (err) {
+      alert('Failed to add stop');
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={onClose}>
+      <div
+        className="bg-white rounded-3xl border-2 border-[#1A1A1A] p-6 w-[400px] max-w-[90vw] space-y-4"
+        style={{ boxShadow: '6px 6px 0px #1A1A1A' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <h3 className="text-base font-black text-[#1A1A1A]">Add a Stop</h3>
+          <button onClick={onClose} className="p-1 rounded-lg hover:bg-[#F5F0E8]"><X size={16} /></button>
+        </div>
+        <div className="space-y-3">
+          <div>
+            <label className="text-[10px] font-bold text-[#1A1A1A] uppercase tracking-widest">City Name</label>
+            <input value={cityName} onChange={e => setCityName(e.target.value)} placeholder="e.g. Manali, Paris"
+              className="w-full border-2 border-[#E5E7EB] rounded-xl px-3 py-2 text-sm focus:border-[#1A1A1A] focus:outline-none" />
+          </div>
+        </div>
+        <button onClick={handleAdd} disabled={saving}
+          className="w-full flex items-center justify-center gap-2 bg-[#F5C142] text-[#1A1A1A] font-black text-sm
+                     rounded-xl px-4 py-3 border-2 border-[#1A1A1A] hover:bg-[#E0AE30] transition-colors disabled:opacity-50"
+          style={{ boxShadow: '3px 3px 0px #1A1A1A' }}>
+          {saving ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+          Add Stop
+        </button>
+      </div>
+    </div>
+  );
+};
+
 const DiscoverPage = () => {
   const { id } = useParams();
   const { trip } = useOutletContext();
@@ -40,19 +87,21 @@ const DiscoverPage = () => {
   const [activeCategory, setActiveCategory] = useState('ALL');
   const [addingId, setAddingId] = useState(null);
   const [addedIds, setAddedIds] = useState(new Set());
+  const [showAddStop, setShowAddStop] = useState(false);
 
   // Load stops for this trip
+  const loadStops = async () => {
+    try {
+      const res = await getStops(id);
+      const s = Array.isArray(res.data) ? res.data : (res.data?.stops || []);
+      setStops(s);
+      if (s.length > 0) setSelectedStop(s[0]);
+    } catch { /* ignore */ }
+    finally { setLoading(false); }
+  };
+
   useEffect(() => {
-    const load = async () => {
-      try {
-        const res = await getStops(id);
-        const s = Array.isArray(res.data) ? res.data : (res.data?.stops || []);
-        setStops(s);
-        if (s.length > 0) setSelectedStop(s[0]);
-      } catch { /* ignore */ }
-      finally { setLoading(false); }
-    };
-    load();
+    loadStops();
   }, [id]);
 
   // Load activities when stop or category changes
@@ -104,9 +153,20 @@ const DiscoverPage = () => {
           <Compass size={32} className="text-[#1A1A1A]" />
         </div>
         <h2 className="text-xl font-black text-[#1A1A1A] mb-2">No stops added yet</h2>
-        <p className="text-sm text-[#6B7280] max-w-sm">
-          Add stops to your trip first using the <b>Plan</b> tab, then come back here to discover activities.
+        <p className="text-sm text-[#6B7280] max-w-sm mb-4">
+          Add a stop to this trip first, then you can discover and add activities.
         </p>
+        <button
+          onClick={() => setShowAddStop(true)}
+          className="flex items-center gap-2 bg-[#F5C142] text-[#1A1A1A] font-black text-sm px-6 py-3 rounded-full border-2 border-[#1A1A1A] hover:bg-[#E0AE30] transition-colors"
+          style={{ boxShadow: '3px 3px 0px #1A1A1A' }}
+        >
+          <Plus size={16} /> Add First Stop
+        </button>
+
+        {showAddStop && (
+          <AddStopPanel tripId={id} onAdded={() => { setShowAddStop(false); loadStops(); }} onClose={() => setShowAddStop(false)} />
+        )}
       </div>
     );
   }
@@ -255,6 +315,11 @@ const DiscoverPage = () => {
             );
           })}
         </div>
+      )}
+
+      {/* Add Stop Panel */}
+      {showAddStop && (
+        <AddStopPanel tripId={id} onAdded={() => { setShowAddStop(false); loadStops(); }} onClose={() => setShowAddStop(false)} />
       )}
     </div>
   );
