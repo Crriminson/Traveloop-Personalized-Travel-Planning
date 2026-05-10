@@ -97,17 +97,52 @@ const getStops = async (tripId, userId) => {
 /**
  * Append a new stop to a trip.
  * orderIndex = current stop count so it always lands at the end.
- * Validates that the cityId actually exists in the cities table.
+ * Supports either an existing cityId OR auto-creating a city from name/country/coords.
  */
 const createStop = async (tripId, userId, data) => {
   await assertMember(tripId, userId);
 
-  // Validate city exists
-  const city = await prisma.city.findUnique({ where: { id: data.cityId } });
-  if (!city) {
-    const err = new Error('City not found');
-    err.statusCode = 404;
-    throw err;
+  let cityId = data.cityId;
+
+  // If no cityId, try to find or create the city
+  if (!cityId && data.cityName) {
+    // Look up by name (case-insensitive)
+    let city = await prisma.city.findFirst({
+      where: {
+        name: { equals: data.cityName, mode: 'insensitive' },
+        ...(data.country && { country: { equals: data.country, mode: 'insensitive' } }),
+      },
+    });
+
+    if (!city) {
+      // Create a new city record
+      city = await prisma.city.create({
+        data: {
+          name: data.cityName,
+          country: data.country || 'Unknown',
+          latitude: data.latitude || 0,
+          longitude: data.longitude || 0,
+          region: '',
+          costIndex: 2,
+          popularityScore: 50,
+          description: `${data.cityName}, ${data.country || 'Unknown'}`,
+          imageUrl: `https://source.unsplash.com/800x600/?${encodeURIComponent(data.cityName)}+travel`,
+          timezone: '',
+        },
+      });
+    }
+
+    cityId = city.id;
+  }
+
+  // Validate city exists (for the cityId path)
+  if (cityId) {
+    const city = await prisma.city.findUnique({ where: { id: cityId } });
+    if (!city) {
+      const err = new Error('City not found');
+      err.statusCode = 404;
+      throw err;
+    }
   }
 
   // Determine next order position atomically
@@ -116,7 +151,7 @@ const createStop = async (tripId, userId, data) => {
   const stop = await prisma.tripStop.create({
     data: {
       tripId,
-      cityId: data.cityId,
+      cityId,
       startDate: data.startDate ?? null,
       endDate: data.endDate ?? null,
       notes: data.notes ?? null,

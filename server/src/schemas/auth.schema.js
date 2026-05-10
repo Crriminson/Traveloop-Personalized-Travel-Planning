@@ -15,6 +15,14 @@ const registerSchema = z.object({
     .string()
     .min(2, { message: 'Name must be at least 2 characters' })
     .max(100, { message: 'Name must be at most 100 characters' }),
+
+  // Optional extended profile fields
+  firstName: z.string().max(60).optional(),
+  lastName:  z.string().max(60).optional(),
+  phone:     z.string().max(30).optional(),
+  city:      z.string().max(100).optional(),
+  country:   z.string().max(100).optional(),
+  bio:       z.string().max(1000).optional(),
 });
 
 const loginSchema = z.object({

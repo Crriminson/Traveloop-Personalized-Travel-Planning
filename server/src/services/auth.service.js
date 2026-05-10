@@ -8,6 +8,12 @@ const USER_SAFE_FIELDS = {
   id: true,
   email: true,
   name: true,
+  firstName: true,
+  lastName: true,
+  phone: true,
+  city: true,
+  country: true,
+  bio: true,
   avatarUrl: true,
   languagePref: true,
   role: true,
@@ -18,7 +24,7 @@ const USER_SAFE_FIELDS = {
  * Register a new user.
  * Throws 409 if the email is already taken.
  */
-const register = async ({ email, password, name }) => {
+const register = async ({ email, password, name, firstName, lastName, phone, city, country, bio }) => {
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) {
     const err = new Error('Email is already registered');
@@ -29,7 +35,17 @@ const register = async ({ email, password, name }) => {
   const passwordHash = await hashPassword(password);
 
   const user = await prisma.user.create({
-    data: { email, passwordHash, name },
+    data: {
+      email,
+      passwordHash,
+      name,
+      ...(firstName !== undefined && { firstName }),
+      ...(lastName  !== undefined && { lastName }),
+      ...(phone     !== undefined && { phone }),
+      ...(city      !== undefined && { city }),
+      ...(country   !== undefined && { country }),
+      ...(bio       !== undefined && { bio }),
+    },
     select: USER_SAFE_FIELDS,
   });
 
