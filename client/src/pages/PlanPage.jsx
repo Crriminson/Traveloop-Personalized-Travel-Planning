@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useOutletContext, useParams } from 'react-router-dom';
 import {
   DndContext, closestCorners, PointerSensor, useSensor, useSensors, DragOverlay,
@@ -7,10 +7,11 @@ import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } 
 import { CSS } from '@dnd-kit/utilities';
 import {
   CalendarDays, GripVertical, Clock, IndianRupee, Trash2, Edit3,
-  Loader2, Plus, X, MapPin, Star, Save,
+  Loader2, Plus, X, MapPin, Save, Search
 } from 'lucide-react';
-import { getStops } from '../api/stops.api';
+import { getStops, createStop } from '../api/stops.api';
 import axiosInstance from '../api/axiosInstance';
+import { searchEntities } from '../api/search.api';
 
 /* ─── Helpers ──────────────────────────────────────────────────────────────── */
 
@@ -119,9 +120,9 @@ const DragOverlayCard = ({ activity }) => {
   );
 };
 
-/* ─── Edit Floating Panel ─────────────────────────────────────────────────── */
+/* ─── Edit / Add Floating Panel ───────────────────────────────────────────── */
 
-const EditPanel = ({ activity, onSave, onClose }) => {
+const EditPanel = ({ activity, onSave, onClose, dayIndex, stopId }) => {
   const [customName, setCustomName] = useState(activity?.customName || activity?.activity?.name || '');
   const [startTime, setStartTime] = useState(activity?.startTime || '');
   const [endTime, setEndTime] = useState(activity?.endTime || '');
@@ -130,8 +131,9 @@ const EditPanel = ({ activity, onSave, onClose }) => {
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
+    if (!customName.trim()) return alert("Name is required");
     setSaving(true);
-    await onSave({ ...activity, customName, startTime, endTime, cost: Number(cost), notes });
+    await onSave({ ...activity, customName, startTime, endTime, cost: Number(cost), notes, dayOffset: dayIndex, stopId });
     setSaving(false);
   };
 
@@ -143,7 +145,7 @@ const EditPanel = ({ activity, onSave, onClose }) => {
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
-          <h3 className="text-base font-black text-[#1A1A1A]">Edit Activity</h3>
+          <h3 className="text-base font-black text-[#1A1A1A]">{activity ? 'Edit Activity' : 'Add Custom Activity'}</h3>
           <button onClick={onClose} className="p-1 rounded-lg hover:bg-[#F5F0E8]"><X size={16} /></button>
         </div>
         <div className="space-y-3">
@@ -187,6 +189,53 @@ const EditPanel = ({ activity, onSave, onClose }) => {
   );
 };
 
+/* ─── Add Stop Panel ──────────────────────────────────────────────────────── */
+const AddStopPanel = ({ tripId, onAdded, onClose }) => {
+  const [cityName, setCityName] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const handleAdd = async () => {
+    if (!cityName.trim()) return alert('City name is required');
+    setSaving(true);
+    try {
+      await createStop(tripId, { cityName });
+      onAdded();
+    } catch (err) {
+      alert('Failed to add stop');
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={onClose}>
+      <div
+        className="bg-white rounded-3xl border-2 border-[#1A1A1A] p-6 w-[400px] max-w-[90vw] space-y-4"
+        style={{ boxShadow: '6px 6px 0px #1A1A1A' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <h3 className="text-base font-black text-[#1A1A1A]">Add a Stop</h3>
+          <button onClick={onClose} className="p-1 rounded-lg hover:bg-[#F5F0E8]"><X size={16} /></button>
+        </div>
+        <div className="space-y-3">
+          <div>
+            <label className="text-[10px] font-bold text-[#1A1A1A] uppercase tracking-widest">City Name</label>
+            <input value={cityName} onChange={e => setCityName(e.target.value)} placeholder="e.g. Manali, Paris"
+              className="w-full border-2 border-[#E5E7EB] rounded-xl px-3 py-2 text-sm focus:border-[#1A1A1A] focus:outline-none" />
+          </div>
+        </div>
+        <button onClick={handleAdd} disabled={saving}
+          className="w-full flex items-center justify-center gap-2 bg-[#F5C142] text-[#1A1A1A] font-black text-sm
+                     rounded-xl px-4 py-3 border-2 border-[#1A1A1A] hover:bg-[#E0AE30] transition-colors disabled:opacity-50"
+          style={{ boxShadow: '3px 3px 0px #1A1A1A' }}>
+          {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+          Add Stop
+        </button>
+      </div>
+    </div>
+  );
+};
+
 /* ─── Plan Page ────────────────────────────────────────────────────────────── */
 
 const PlanPage = () => {
@@ -196,34 +245,38 @@ const PlanPage = () => {
   const [loading, setLoading] = useState(true);
   const [activitiesByStop, setActivitiesByStop] = useState({});
   const [editingActivity, setEditingActivity] = useState(null);
+  const [addingActivityDay, setAddingActivityDay] = useState(null);
   const [activeId, setActiveId] = useState(null);
+  const [showAddStop, setShowAddStop] = useState(false);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   const days = useMemo(() => getDaysArray(trip?.startDate, trip?.endDate), [trip]);
 
   // Load stops + their activities
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const res = await getStops(id);
-        const s = Array.isArray(res.data) ? res.data : (res.data?.stops || []);
-        setStops(s);
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const res = await getStops(id);
+      const s = Array.isArray(res.data) ? res.data : (res.data?.stops || []);
+      setStops(s);
 
-        // Fetch activities for each stop
-        const map = {};
-        for (const stop of s) {
-          try {
-            const actRes = await axiosInstance.get(`/trips/${id}/stops/${stop.id}/activities`);
-            const acts = actRes.data?.data || [];
-            map[stop.id] = Array.isArray(acts) ? acts : [];
-          } catch { map[stop.id] = []; }
-        }
-        setActivitiesByStop(map);
-      } catch { /* ignore */ }
-      finally { setLoading(false); }
-    };
-    load();
+      // Fetch activities for each stop
+      const map = {};
+      for (const stop of s) {
+        try {
+          const actRes = await axiosInstance.get(`/trips/${id}/stops/${stop.id}/activities`);
+          const acts = actRes.data?.data || [];
+          map[stop.id] = Array.isArray(acts) ? acts : [];
+        } catch { map[stop.id] = []; }
+      }
+      setActivitiesByStop(map);
+    } catch { /* ignore */ }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => {
+    loadData();
   }, [id]);
 
   // All activities flat (for drag context)
@@ -254,8 +307,6 @@ const PlanPage = () => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
-    // Find which day column the active and over items are in
-    // For now, handle reorder within the same list
     const dayKey = Object.keys(activitiesByDay).find(k =>
       activitiesByDay[k].some(a => a.id === active.id)
     );
@@ -271,7 +322,6 @@ const PlanPage = () => {
     // Optimistic update
     setActivitiesByStop(prev => {
       const next = { ...prev };
-      // Find which stop these belong to
       for (const stopId of Object.keys(next)) {
         const hasItem = next[stopId].some(a => a.id === active.id);
         if (hasItem) {
@@ -334,6 +384,30 @@ const PlanPage = () => {
     setEditingActivity(null);
   };
 
+  const handleAddActivity = async (newActivity) => {
+    try {
+      const res = await axiosInstance.post(
+        `/trips/${id}/stops/${newActivity.stopId}/activities`,
+        {
+          customName: newActivity.customName,
+          startTime: newActivity.startTime || null,
+          endTime: newActivity.endTime || null,
+          cost: newActivity.cost,
+          notes: newActivity.notes || null,
+          dayOffset: newActivity.dayOffset
+        }
+      );
+      const addedAct = res.data.data;
+      setActivitiesByStop(prev => {
+        const next = { ...prev };
+        if (!next[newActivity.stopId]) next[newActivity.stopId] = [];
+        next[newActivity.stopId] = [...next[newActivity.stopId], addedAct];
+        return next;
+      });
+    } catch (err) { alert('Failed to add activity'); }
+    setAddingActivityDay(null);
+  };
+
   const draggedActivity = activeId ? allActivities.find(a => a.id === activeId) : null;
 
   if (loading) {
@@ -362,14 +436,26 @@ const PlanPage = () => {
           </div>
         </div>
 
-        {/* Budget bar */}
-        <div className="flex items-center gap-3 bg-white rounded-full border-2 border-[#1A1A1A] px-4 py-2"
-          style={{ boxShadow: '2px 2px 0px #1A1A1A' }}>
-          <IndianRupee size={14} className="text-[#1A1A1A]" />
-          <span className="text-sm font-black text-[#1A1A1A]">₹{totalCost.toLocaleString('en-IN')}</span>
-          {trip?.totalBudget && (
-            <span className="text-xs text-[#6B7280]">/ ₹{trip.totalBudget.toLocaleString('en-IN')}</span>
+        <div className="flex items-center gap-3">
+          {stops.length > 0 && (
+            <button
+              onClick={() => setShowAddStop(true)}
+              className="flex items-center gap-1.5 bg-[#1A1A1A] text-white px-4 py-2 rounded-full text-sm font-bold border-2 border-[#1A1A1A] hover:bg-[#333]"
+              style={{ boxShadow: '2px 2px 0px #1A1A1A' }}
+            >
+              <Plus size={14} /> Add Stop
+            </button>
           )}
+
+          {/* Budget bar */}
+          <div className="flex items-center gap-3 bg-white rounded-full border-2 border-[#1A1A1A] px-4 py-2"
+            style={{ boxShadow: '2px 2px 0px #1A1A1A' }}>
+            <IndianRupee size={14} className="text-[#1A1A1A]" />
+            <span className="text-sm font-black text-[#1A1A1A]">₹{totalCost.toLocaleString('en-IN')}</span>
+            {trip?.totalBudget && (
+              <span className="text-xs text-[#6B7280]">/ ₹{trip.totalBudget.toLocaleString('en-IN')}</span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -380,9 +466,16 @@ const PlanPage = () => {
             <CalendarDays size={32} className="text-[#1A1A1A]" />
           </div>
           <h2 className="text-xl font-black text-[#1A1A1A] mb-2">No stops yet</h2>
-          <p className="text-sm text-[#6B7280] max-w-sm">
-            Add stops to this trip from the <b>Overview</b> tab, then plan your daily itinerary here.
+          <p className="text-sm text-[#6B7280] max-w-sm mb-4">
+            Add a stop to this trip to start planning your daily itinerary.
           </p>
+          <button
+            onClick={() => setShowAddStop(true)}
+            className="flex items-center gap-2 bg-[#F5C142] text-[#1A1A1A] font-black text-sm px-6 py-3 rounded-full border-2 border-[#1A1A1A] hover:bg-[#E0AE30] transition-colors"
+            style={{ boxShadow: '3px 3px 0px #1A1A1A' }}
+          >
+            <Plus size={16} /> Add First Stop
+          </button>
         </div>
       ) : (
         /* Day columns — horizontal scroll */
@@ -397,7 +490,7 @@ const PlanPage = () => {
                 const dayCost = dayActs.reduce((s, a) => s + (a.cost || 0), 0);
 
                 return (
-                  <div key={dayIdx} className="w-[260px] flex-shrink-0">
+                  <div key={dayIdx} className="w-[260px] flex-shrink-0 flex flex-col">
                     {/* Day header */}
                     <div className="bg-[#F5C142] rounded-t-2xl border-2 border-[#1A1A1A] px-4 py-3"
                       style={{ boxShadow: '2px 2px 0px #1A1A1A' }}>
@@ -420,7 +513,7 @@ const PlanPage = () => {
                     </div>
 
                     {/* Activities column */}
-                    <div className="bg-white/60 border-2 border-t-0 border-[#1A1A1A] rounded-b-2xl px-2 py-2 min-h-[200px] space-y-2">
+                    <div className="bg-white/60 border-2 border-t-0 border-[#1A1A1A] rounded-b-2xl px-2 py-2 flex-1 flex flex-col gap-2">
                       <SortableContext items={dayActs.map(a => a.id)} strategy={verticalListSortingStrategy}>
                         {dayActs.map(act => (
                           <SortableActivity
@@ -433,10 +526,17 @@ const PlanPage = () => {
                       </SortableContext>
 
                       {dayActs.length === 0 && (
-                        <div className="flex items-center justify-center h-[120px] border-2 border-dashed border-[#D1D5DB] rounded-xl">
-                          <p className="text-xs text-[#9CA3AF] font-bold">Drop activities here</p>
+                        <div className="flex items-center justify-center h-[80px] border-2 border-dashed border-[#D1D5DB] rounded-xl text-xs text-[#9CA3AF] font-bold">
+                          Drop activities here
                         </div>
                       )}
+
+                      <button
+                        onClick={() => setAddingActivityDay({ dayIndex: dayIdx, stopId: dayStop.id })}
+                        className="mt-auto flex items-center justify-center gap-1.5 w-full py-2 border-2 border-dashed border-[#E5E7EB] rounded-xl text-xs font-bold text-[#6B7280] hover:text-[#1A1A1A] hover:border-[#1A1A1A] transition-colors"
+                      >
+                        <Plus size={14} /> Add Custom Activity
+                      </button>
                     </div>
                   </div>
                 );
@@ -453,6 +553,22 @@ const PlanPage = () => {
       {/* Edit panel */}
       {editingActivity && (
         <EditPanel activity={editingActivity} onSave={handleEditSave} onClose={() => setEditingActivity(null)} />
+      )}
+
+      {/* Add panel */}
+      {addingActivityDay && (
+        <EditPanel 
+          activity={null} 
+          dayIndex={addingActivityDay.dayIndex}
+          stopId={addingActivityDay.stopId}
+          onSave={handleAddActivity} 
+          onClose={() => setAddingActivityDay(null)} 
+        />
+      )}
+
+      {/* Add Stop Panel */}
+      {showAddStop && (
+        <AddStopPanel tripId={id} onAdded={() => { setShowAddStop(false); loadData(); }} onClose={() => setShowAddStop(false)} />
       )}
     </div>
   );
