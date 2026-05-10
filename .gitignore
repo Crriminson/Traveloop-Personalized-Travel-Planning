@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+
+# Environment variables — NEVER commit real secrets
+.env
+.env.local
+.env.production
+
+# Prisma generated client (regenerated via prisma generate)
+server/node_modules/
+
+# Build outputs
+dist/
+build/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Prisma migrations lock (keep migrations/, exclude this if using shadow DB)
+# prisma/migrations/
+
+# Coverage
+coverage/
