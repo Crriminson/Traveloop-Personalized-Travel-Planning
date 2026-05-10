@@ -1,8 +1,9 @@
 const { Router } = require('express');
 const tripController = require('../controllers/trip.controller');
-const authMiddleware = require('../middleware/auth.middleware');
-const validate = require('../middleware/validate.middleware');
+const authMiddleware  = require('../middleware/auth.middleware');
+const validate        = require('../middleware/validate.middleware');
 const { createTripSchema, updateTripSchema } = require('../schemas/trip.schema');
+const stopRouter      = require('./stop.routes');
 
 const router = Router();
 
@@ -23,5 +24,10 @@ router.delete('/:id', tripController.deleteTrip);
 
 router.put('/:id/share', tripController.toggleShare);
 router.post('/:id/clone', tripController.cloneTrip);
+
+// ── Nested routers ────────────────────────────────────────────────────────────
+// Auth is already applied above via router.use(authMiddleware), so the nested
+// stop router inherits authentication automatically.
+router.use('/:id/stops', stopRouter);
 
 module.exports = router;
