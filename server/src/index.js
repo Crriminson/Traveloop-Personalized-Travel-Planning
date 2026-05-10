@@ -45,11 +45,11 @@ app.get('/api/v1/health', (req, res) => {
 });
 
 // ── Feature routers ─────────────────────────────────────────────────────────
-app.use('/api/v1/auth', require('./routes/auth.routes'));
+app.use('/api/v1/auth',       require('./routes/auth.routes'));
+app.use('/api/v1/users',      require('./routes/user.routes'));
+app.use('/api/v1/trips',      require('./routes/trip.routes'));
 
 // TODO: mount as implemented in later phases
-// app.use('/api/v1/users',      require('./routes/users.routes'));
-// app.use('/api/v1/trips',      require('./routes/trips.routes'));
 // app.use('/api/v1/cities',     require('./routes/cities.routes'));
 // app.use('/api/v1/activities', require('./routes/activities.routes'));
 
