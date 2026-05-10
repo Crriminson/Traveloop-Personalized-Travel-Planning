@@ -4,12 +4,19 @@ const dateField = z.coerce.date({ invalid_type_error: 'Must be a valid date' });
 
 const createStopSchema = z
   .object({
+    // Either provide an existing cityId OR provide city details for auto-creation
     cityId: z
       .string()
-      .uuid({ message: 'cityId must be a valid UUID' }),
+      .uuid({ message: 'cityId must be a valid UUID' })
+      .optional(),
+
+    // Auto-create city fields (used when cityId is not provided)
+    cityName: z.string().min(1).max(100).optional(),
+    country: z.string().min(1).max(100).optional(),
+    latitude: z.number().optional(),
+    longitude: z.number().optional(),
 
     startDate: dateField.optional(),
-
     endDate: dateField.optional(),
 
     notes: z
@@ -17,6 +24,10 @@ const createStopSchema = z
       .max(500, { message: 'Notes must be at most 500 characters' })
       .optional(),
   })
+  .refine(
+    (data) => data.cityId || data.cityName,
+    { message: 'Either cityId or cityName must be provided', path: ['cityId'] }
+  )
   .refine(
     (data) => {
       if (data.startDate && data.endDate) return data.endDate >= data.startDate;
@@ -33,7 +44,6 @@ const updateStopSchema = z
       .optional(),
 
     startDate: dateField.optional(),
-
     endDate: dateField.optional(),
 
     notes: z

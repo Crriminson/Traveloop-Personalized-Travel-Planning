@@ -49,6 +49,13 @@ app.use('/api/v1/auth',       require('./routes/auth.routes'));
 app.use('/api/v1/users',      require('./routes/user.routes'));
 app.use('/api/v1/trips',      require('./routes/trip.routes'));
 
+app.use('/api/v1/expenses',   require('./routes/expense.routes'));
+app.use('/api/v1/packing',    require('./routes/packing.routes'));
+app.use('/api/v1/notes',      require('./routes/note.routes'));
+app.use('/api/v1/community',  require('./routes/community.routes'));
+app.use('/api/v1/admin',      require('./routes/admin.routes'));
+app.use('/api/v1/search',     require('./routes/search.routes'));
+
 // TODO: mount as implemented in later phases
 // app.use('/api/v1/cities',     require('./routes/cities.routes'));
 // app.use('/api/v1/activities', require('./routes/activities.routes'));
@@ -58,19 +65,12 @@ app.use((req, res) => {
   res.status(404).json(apiResponse.error(`Route ${req.method} ${req.originalUrl} not found`));
 });
 
+const errorHandler = require('./middleware/errorHandler');
+
 // ── Global error handler ──────────────────────────────────────────────────────
-// Catches anything passed to next(err) in any route/middleware.
-// Detailed error body only shown in development.
-app.use((err, req, res, next) => {
-  const statusCode = err.statusCode || 500;
-  const message    = err.message    || 'Internal Server Error';
+app.use(errorHandler);
 
-  if (env.NODE_ENV === 'development') {
-    console.error(`[ERROR] ${statusCode} ${message}`, err.stack);
-  }
 
-  res.status(statusCode).json(apiResponse.error(message, env.NODE_ENV === 'development' ? err.stack : undefined));
-});
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 app.listen(env.PORT, () => {

@@ -7,10 +7,10 @@ const { registerSchema, loginSchema } = require('../schemas/auth.schema');
 
 const router = Router();
 
-// Tighter rate limit for auth routes: 10 requests / 15 min per IP (guideline requirement)
+// Rate limit: strict in production (10 req / 15 min), relaxed in development (1000 req / window)
 const authRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: process.env.NODE_ENV === 'production' ? 10 : 1000,
   standardHeaders: true,
   legacyHeaders: false,
   message: {
