@@ -39,3 +39,7 @@ coverage/
 # ── Prisma ──────────────────────────────────────────────────────────────────
 # keep migrations/ but exclude generated client cache
 server/node_modules/
+
+# ── Project-specific ────────────────────────────────────────────────────────
+docs/
+extra/
