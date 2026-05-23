@@ -47,3 +47,21 @@ export const deleteTrip = async (id) => {
   const res = await axiosInstance.delete(`/trips/${id}`);
   return res.data;
 };
+
+/**
+ * Fetch a publicly shared trip by its share token (no auth required).
+ * GET /api/v1/trips/shared/:token
+ */
+export const getPublicTrip = async (token) => {
+  const res = await axiosInstance.get(`/trips/shared/${token}`);
+  return res.data;
+};
+
+/**
+ * Clone (copy) a trip into the current user's account.
+ * POST /api/v1/trips/:id/clone
+ */
+export const cloneTrip = async (id) => {
+  const res = await axiosInstance.post(`/trips/${id}/clone`);
+  return res.data;
+};
